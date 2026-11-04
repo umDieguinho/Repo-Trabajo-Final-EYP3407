@@ -41,3 +41,11 @@ summary(vuelos_df$Incididencia)
 
 ## Predictores no válidos ----
 source("id_predictores.R")
+data_procesada <- vuelos_df %>%
+  select(
+    -all_of(predictoras_drop),
+    -starts_with("Div", ignore.case = TRUE)  # Elimina todas las que empiezan por div/Div
+  )
+
+
+

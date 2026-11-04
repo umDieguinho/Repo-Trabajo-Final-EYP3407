@@ -7,7 +7,7 @@ vars_id_aerolinea <- vuelos_df %>%
     Reporting_Airline,
     DOT_ID_Reporting_Airline,
     IATA_CODE_Reporting_Airline,
-    Flight_Number_Reporting_Airline,
+    Flight_Number_Reporting_Airline
   )
 
 vars_id_aerolinea <- vars_id_aerolinea %>%
