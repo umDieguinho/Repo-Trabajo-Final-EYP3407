@@ -35,8 +35,6 @@ dir.create("resultados", showWarnings = FALSE)
 msg     <- function(...) message(format(Sys.time(), "%H:%M:%S"), " | ", ...)
 guardar <- function(x, nombre) write.csv(x, file.path("resultados", nombre), row.names = FALSE)
 
-COMPILAR_INFORME <- FALSE   # TRUE: al final intenta compilar informe_caso05.tex con pdflatex
-
 #### 1. CARGA, RESPUESTA, CLAVE Y DUPLICADOS ####
 msg("1. Carga de datos")
 stopifnot(file.exists("datos/vuelos.csv"), file.exists("datos/diccionario.csv"))
@@ -630,5 +628,5 @@ writeLines(capture.output(sessionInfo()), "resultados/sessionInfo.txt")
 msg("Tiempo total: ", round(as.numeric(difftime(Sys.time(), t_inicio, units = "mins")), 1), " min")
 
 
-}
+
 
