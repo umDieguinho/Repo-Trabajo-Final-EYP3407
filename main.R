@@ -1,7 +1,7 @@
 ## main.R ----
 # Caso 05 (BTS, vuelos desde BOS/JFK/LGA, 2022-2024) - EYP3407 Tópicos Aplicados en Estadística
 # Punto de entrada único. Ejecutar desde la raíz del repositorio:
-#   Rscript --vanilla analisis.R
+#   Rscript --vanilla main.R
 # Entradas : datos/vuelos.csv y datos/diccionario.csv (caso05_bts_vuelos.zip descomprimido en datos/)
 #            id_predictores.R (auditoría y exclusión de predictores; se carga con source())
 # Salidas  : carpeta resultados/ (tablas .csv, predicciones, figura de calibración, sessionInfo)

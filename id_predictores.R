@@ -114,3 +114,5 @@ rm(vars_aerolinea, vars_origen, vars_destino,
    drop_aerolinea, drop_origen, drop_destino, drop_redundantes,
    drop_posteriores, drop_div, faltantes)
 
+
+

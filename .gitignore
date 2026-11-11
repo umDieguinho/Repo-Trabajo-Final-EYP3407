@@ -1,3 +1,4 @@
 diccionario.csv
 vuelos.csv
 datos/*
+!datos/.gitkeep
