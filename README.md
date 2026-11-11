@@ -26,7 +26,7 @@ El repositorio debe contar con la siguiente estructura mínima para ejecutarse c
 ## Obtención y Preparación de los Datos
 Los datos provienen del *Bureau of Transportation Statistics (BTS): Reporting Carrier On-Time Performance*. 
 
-1. Se debe contar con el archivo proporcionado por el curso: `caso05_bts_vuelos.zip`.
+1. Se puede encontrar el archivo `caso05_bts_vuelos.zip` con los datos en este enlace: https://drive.google.com/file/d/1Mp4zFvCUtrN7Muzpu36aT8MNnyMI-NzS/view?usp=drive_link.
 2. Descomprimir el archivo `.zip`.
 3. Mover los archivos resultantes (`vuelos.csv` y `diccionario.csv`) dentro de la carpeta `datos/` en la raíz de este repositorio.
 
