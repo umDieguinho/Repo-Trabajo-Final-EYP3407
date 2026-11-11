@@ -18,7 +18,7 @@ El repositorio debe contar con la siguiente estructura mínima para ejecutarse c
 ├── datos/                  # Directorio para los archivos de entrada (vuelos.csv, diccionario.csv)
 ├── main.R                  # Script principal y punto de entrada único
 ├── id_predictores.R        # Script auxiliar para auditoría y exclusión de variables (cargado por main.R)
-├── informe_final.tex       # (Opcional) Código fuente del informe en LaTeX
+├── informe_final.tex       # Código fuente del informe en LaTeX
 ├── presentacion.pdf        # Diapositivas de la presentación final
 └── README.md               # Este archivo
 ```
@@ -60,14 +60,14 @@ Las semillas aleatorias están fijadas internamente en el código (`set.seed(202
 *   **Resultado:** La ejecución finalizó de manera exitosa en un entorno clonado, sin depender de objetos del *Workspace* previos. Las tablas, métricas de validación y la figura de calibración generadas en `resultados/` coinciden de forma idéntica con los valores reportados en el informe escrito y la presentación.
 
 ## Síntesis de Aportes del Equipo
-*   **Diego Rodríguez:** Diseño del pipeline de validación temporal, ajuste y tuning de hiperparámetros (`glmnet` y `ranger`).
-*   **Eilenne Jaque:** Limpieza de datos, auditoría de duplicados, construcción de métricas históricas rodantes sin fuga de información y tablas de muestra.
-*   **Benjamín Mondaca:** Implementación del modelo de referencia, ajuste del árbol podado (`rpart`) y programación del análisis de incertidumbre vía bootstrap temporal.
-*   **Matías Gomez:** Evaluación final en prueba 2024, desarrollo del análisis de calibración, redacción del informe en LaTeX y orquestación del repositorio GitHub.
+*   **Diego Rodríguez:** Diseño general, creación y arquitectura del repositorio de código, definición del esquema de validación temporal y revisión del informe final.
+*   **Eilenne Jaque:** Implementación completa del pipeline de procesamiento de datos, codificación de los procedimientos predictivos (`glmnet`, `rpart`, `ranger`), ejecución de los experimentos de validación, prueba y análisis de sensibilidad.
+*   **Benjamín Mondaca:** Análisis e interpretación de los resultados en desarrollo y prueba, evaluación de matrices de confusión por umbral, soporte en la construcción conceptual de las tasas históricas y revisión del análisis de incertidumbre via bootstrap.
+*   **Matías Gomez:** Auditoría de predictores y variables excluidas, diseño y verificación de las tablas de desempeño del informe, elaboración del análisis de heterogeneidad (por aeropuerto/temporada) y preparación del material para la presentación.
 
 ## Declaración de uso de Inteligencia Artificial
 Se utilizó asistencia del modelo de lenguaje Claude con el objetivo de:
-*   Realizar revisión de sintaxis y dar formato al documento final en LaTeX.
+*   Generación y estructuración de borradores iniciales de secciones textuales del informe, así como revisión de sintaxis, pulido de estilo y formateo en LaTeX.
 *   Recibir sugerencias para la optimización y vectorización del código en R (específicamente en el cálculo histórico por grupos temporales).
 *   Estructurar borradores del guion para la presentación.
 *   **Verificación:** Todo el código estadístico, los resultados matemáticos y las conclusiones fueron revisados, ejecutados y validados independientemente por el equipo.
