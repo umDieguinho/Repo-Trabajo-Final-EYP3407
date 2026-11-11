@@ -1,0 +1,707 @@
+\documentclass[11pt,a4paper]{article}
+ 
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{float}
+\usepackage{placeins}
+\setstretch{1.15}
+ 
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black}
+\newcommand{\por}[1]{\textcolor{red!60!black}{\textbf{[POR COMPLETAR: #1]}}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\setlength{\emergencystretch}{3em}
+ 
+\title{\textbf{Predicción de incidencias operativas en vuelos programados desde BOS, JFK y LGA}\\[2pt]
+\large Caso 05 --- Trabajo final EYP3407 Tópicos Aplicados en Estadística}
+\author{Diego Rodríguez, Eilenne Jaque, Benjamín Mondaca, Matías Gómez\\[4pt]
+Pontificia Universidad Católica de Chile\\
+Facultad de Matemáticas, Departamento de Estadística\\
+Profesor: Eloy Alvarado Narváez \quad Ayudante: Andrés Díaz}
+\date{10 de noviembre de 2026}
+\begin{document}
+ 
+\maketitle
+\thispagestyle{empty}
+ 
+\begin{center}
+\begin{tabular}{@{}lp{11cm}@{}}
+\textbf{Repositorio:} & \url{https://github.com/umDieguinho/Repo-Trabajo-Final-EYP3407}\\
+\textbf{Versión (commit):} & \por{hash del commit entregado}
+\end{tabular}
+\end{center}
+ 
+\newpage
+\tableofcontents
+\newpage
+ 
+%====================================================================
+\section{Resumen ejecutivo}
+%====================================================================
+\textbf{Problema.} Se busca identificar, con información de programación, los vuelos domésticos con salida desde BOS, JFK o LGA (2022--2024) que terminarán cancelados, desviados o con un retraso de llegada de al menos 15 minutos (23,8\,\% de los 130\,940 vuelos de la muestra).
+ 
+\textbf{Resultado principal.} Se compararon una probabilidad constante y tres procedimientos (regresión logística penalizada, árbol podado y bosque aleatorio), con validación temporal en 2022--2023 y una reserva de prueba en 2024. La regresión logística lasso (M1) fue elegida en desarrollo; en 2024 su pérdida logarítmica es 0,496 frente a 0,523 de la referencia (diferencia $-0{,}027$; intervalo bootstrap por semanas de 95\,\%: $-0{,}034$ a $-0{,}018$) y su AUC es 0,65. El bosque aleatorio queda empatado (diferencia $-0{,}0007$, con intervalo que incluye el cero) y el árbol es peor.
+ 
+\textbf{Recomendación.} El modelo sirve para priorizar vuelos, no para decidir por sí solo: con un umbral de 0,24 marca 31\,\% de los vuelos, detecta 48\,\% de las incidencias y acierta en 33\,\% de los vuelos marcados (1,5 veces la prevalencia). Su mejora es casi nula en invierno y su sensibilidad cae en otoño; el umbral debe reajustarse con datos recientes.
+ 
+\textbf{Principal limitación.} La evaluación es retrospectiva: supone que la programación usada estaba disponible al emitir la predicción y que el resultado de cada vuelo se conoce al cierre de su día; no acredita desempeño operativo en tiempo real.
+ 
+%====================================================================
+\section{Problema y datos}
+%====================================================================
+ 
+\subsection{Pregunta, audiencia y decisión que apoya}
+ 
+\textbf{Pregunta.} ¿Puede identificarse, con información de programación, un vuelo que terminará cancelado, desviado o con al menos 15 minutos de retraso de llegada?
+ 
+\textbf{Naturaleza del ejercicio.} Se trata de una clasificación \emph{retrospectiva bajo un supuesto de información}: el archivo no conserva necesariamente la versión de la programación vigente el día anterior al vuelo. Una asociación predictiva no implica efecto causal.
+ 
+\textbf{Usuarios potenciales y decisiones que apoya el análisis.} Este análisis está dirigido principalmente a analistas de operaciones de aerolíneas, quienes podrían utilizar las probabilidades estimadas para identificar vuelos con mayor riesgo de cancelación o de presentar retrasos iguales o superiores a 15 minutos. Esta información podría apoyar la planificación operacional y la adopción de medidas preventivas, como la reasignación de recursos o la preparación de alternativas ante posibles inconvenientes. Asimismo, los resultados podrían ser de utilidad para pasajeros que viajan con frecuencia, al proporcionarles información adicional para evaluar el riesgo asociado a determinados vuelos y fechas.
+ 
+\subsection{Población, unidad y respuesta}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Población:} vuelos domésticos con salida programada desde BOS, JFK y LGA, 2022--2024. El paquete contiene aproximadamente el 10\,\% de los vuelos, seleccionado mediante una regla determinista sobre la clave (fecha, aerolínea, número, origen, hora programada) que no usa el resultado (ver \code{LEEME.txt}).
+  \item \textbf{Unidad:} vuelo programado, identificado por (fecha, aerolínea, número de vuelo, origen, hora programada), con auditoría de duplicados.
+  \item \textbf{Respuesta:} $Y_i = 1$ si $\texttt{Cancelled}_i = 1$, $\texttt{Diverted}_i = 1$ o $\texttt{ArrDel15}_i = 1$; $Y_i = 0$ si el vuelo finaliza sin esos eventos y tiene resultado conocido. Los casos indeterminados se reportan y \emph{no} se recodifican como cero.
+  \item \textbf{Horizonte:} la predicción se emite antes de la salida, con la programación del vuelo y con los resultados de los vuelos de días anteriores (el resultado de cada vuelo se supone conocido al cierre de su día).
+\end{itemize}
+ 
+\subsection{Procedencia de los datos}
+Fuente: Bureau of Transportation Statistics (BTS), \emph{Reporting Carrier On-Time Performance}, descargas de TranStats. Paquete utilizado: \code{caso05\_bts\_vuelos.zip} (36 archivos mensuales, 130\,940 vuelos). La fecha de descarga de los datos corresponde al 6 de noviembre. Los archivos originales extraídos del paquete son \texttt{vuelos.csv} y \texttt{diccionario.csv}. El conjunto filtrado abarca exclusivamente operaciones domésticas con salida desde los aeropuertos de BOS, JFK o LGA, correspondientes al periodo 2022–2024. En la etapa de limpieza, se aplicaron filtros para excluir variables redundantes, variables de identificación de alta cardinalidad (como \texttt{Tail\_Number}) y cualquier variable con información posterior a la programación del vuelo (como tiempos de despegue reales, códigos de cancelación y retrasos en destino) para evitar fuga de información. Estos datos son de carácter público provistos por el BTS para el desarrollo del caso académico. Finalmente, las definiciones y descripciones oficiales de cada columna se extrajeron del archivo \texttt{diccionario.csv} adjunto en el repositorio.
+ 
+Se distinguen tres fechas en los datos: la del fenómeno (salida/llegada del vuelo), la del registro en BTS y la de descarga del archivo.
+ 
+\subsection{Construcción de la muestra}
+\begin{table}[ht]
+\centering
+\caption{Construcción de la muestra analítica (número de vuelos).}
+\label{tab:muestra}
+\begin{tabularx}{\textwidth}{@{}lXrr@{}}
+\toprule
+Paso & Descripción & Filas restantes & Excluidas \\
+\midrule
+0 & Paquete original (36 archivos mensuales) & 130\,940 & -- \\
+1 & Auditoría de duplicados por clave del vuelo (no hay claves repetidas) & 130\,940 & 0 \\
+2 & Resultado indeterminado (reportado, no recodificado) & 130\,940 & 0 \\
+3 & Exclusiones adicionales por calidad (ninguna; los faltantes de predictores numéricos se imputan con la media de entrenamiento) & 130\,940 & 0 \\
+\midrule
+ & \textbf{Base analítica} & 130\,940 & \\
+ & \quad Desarrollo (2022--2023) & 87\,928 & \\
+ & \quad Reserva de prueba (2024) & 43\,012 & \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+No hay indeterminados porque \code{ArrDel15} solo falta en vuelos cancelados, que tienen $Y=1$ por definición. La Figura~\ref{fig:muestra} resume la construcción de la muestra. No se excluyeron observaciones por datos incompletos en las variables predictoras (Paso 3). Durante el preprocesamiento, los valores faltantes en predictores numéricos se imputaron dinámicamente utilizando la media del conjunto de entrenamiento correspondiente. Por su parte, para las variables categóricas, los niveles con frecuencias menores a 30 o no observados previamente fueron agrupados bajo la categoría \texttt{Otra}.
+ 
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[box/.style={draw, rounded corners, align=center, minimum height=0.9cm, font=\small}, >=Stealth, node distance=0.7cm]
+  \node[box, text width=10cm] (a) {Paquete original: 36 archivos mensuales, 130\,940 vuelos};
+  \node[box, text width=10cm, below=of a] (b) {Clave única (0 duplicados) y respuesta conocida (0 indeterminados)};
+  \node[box, text width=10cm, below=of b] (c) {Base analítica: 130\,940 vuelos};
+  \node[box, text width=4.2cm] (d) at ($(c)+(-2.5,-2.0)$) {Desarrollo 2022--2023\\87\,928 vuelos};
+  \node[box, text width=4.2cm] (e) at ($(c)+(2.5,-2.0)$) {Reserva de prueba 2024\\43\,012 vuelos};
+  \draw[->] (a) -- (b);
+  \draw[->] (b) -- (c);
+  \draw[->] (c.south) -- (d.north);
+  \draw[->] (c.south) -- (e.north);
+\end{tikzpicture}
+\caption{Diagrama de construcción de la muestra analítica (número de vuelos). No se excluyó ningún vuelo; la partición en desarrollo y prueba es por año.}
+\label{fig:muestra}
+\end{figure}
+ 
+\subsection{Descripción de la muestra}
+La prevalencia global de la respuesta es 23,8\,\% (31\,222 incidencias en 130\,940 vuelos) y disminuye con los años (Tabla~\ref{tab:respuesta}): la probabilidad constante estimada en desarrollo (25,0\,\%) quedará por encima de la prevalencia de la reserva (21,4\,\%).
+ 
+\begin{table}[ht]
+\centering
+\caption{Respuesta por año y tipo de incidencia (número de vuelos).}
+\label{tab:respuesta}
+\small
+\begin{tabularx}{\textwidth}{@{}Xrrrrrr@{}}
+\toprule
+Año & Vuelos & Cancelados & Desviados & Retraso $\geq$15 min & Incidencias & Prevalencia \\
+\midrule
+2022 & 44\,432 & 1\,826 & 113 & 10\,068 & 12\,007 & 27,0\,\% \\
+2023 & 43\,496 & 960 & 109 & 8\,940 & 10\,009 & 23,0\,\% \\
+2024 & 43\,012 & 845 & 106 & 8\,255 & 9\,206 & 21,4\,\% \\
+\midrule
+Total & 130\,940 & 3\,631 & 328 & 27\,263 & 31\,222 & 23,8\,\% \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+\paragraph{Cobertura temporal y tamaño de la muestra.}
+El paquete cubre los 36 meses de enero de 2022 a diciembre de 2024, sin meses faltantes, con entre 3\,183 vuelos (febrero de 2024) y 4\,007 (marzo de 2023) por mes (Tabla~\ref{tab:mes} del Anexo~\ref{anexo}). Hay 3 aeropuertos de origen (BOS, JFK y LGA), 124 aeropuertos de destino, 15 aerolíneas y 252 rutas origen--destino distintas. De estas rutas, 246 aparecen en el periodo de desarrollo y 6 solo en 2024; para esos vuelos el modelo no dispone de historia propia de la ruta (Sección~\ref{sec:sens}, rutas no vistas).
+ 
+ 
+ 
+ 
+\subsection{Auditoría de predictores}
+La Tabla~\ref{tab:variables} del Anexo~\ref{anexo} lista las variables admisibles y las excluidas, con su interpretación, tipo, disponibilidad temporal y decisión de inclusión. Se usan como predictores la programación del vuelo (aeropuertos, aerolínea, distancia, duración y horarios programados), el calendario (mes y día de la semana) y tasas históricas de incidencia construidas solo con días anteriores; se excluyen los identificadores redundantes y todas las variables posteriores a la salida o que definen la respuesta.
+\FloatBarrier
+ 
+%====================================================================
+\section{Diseño de evaluación}
+%====================================================================
+ 
+\subsection{Esquema de particiones}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Desarrollo:} 2022--2023, para entrenar, validar y seleccionar modelos.
+  \item \textbf{Reserva de prueba:} 2024, evaluada una sola vez tras fijar población, variables, modelos, métricas, umbral y regla de selección.
+  \item \textbf{Validación interna:} tres bloques cronológicos de cuatro meses de 2023 (enero--abril, mayo--agosto, septiembre--diciembre), comunes a los tres aeropuertos para preservar las perturbaciones compartidas por fecha, con origen de validación creciente: el entrenamiento de cada bloque incluye todos los meses anteriores desde enero de 2022. No se requiere una brecha entre entrenamiento y validación porque el resultado de cada vuelo se conoce al cierre de su día.
+\end{itemize}
+ 
+\begin{table}[ht]
+\centering
+\caption{Particiones de validación interna (desarrollo).}
+\label{tab:folds}
+\begin{tabularx}{\textwidth}{@{}L{3.6cm}rrrr@{}}
+\toprule
+Bloque de validación & $n$ entrenamiento & $n$ validación & Prev. entrenamiento & Prev. validación \\
+\midrule
+1: ene--abr 2023 & 44\,432 & 14\,763 & 27,0\,\% & 24,6\,\% \\
+2: may--ago 2023 & 59\,195 & 14\,859 & 26,4\,\% & 25,5\,\% \\
+3: sep--dic 2023 & 74\,054 & 13\,874 & 26,2\,\% & 18,6\,\% \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[x=0.9cm,y=1cm,>=Stealth]
+  % ejes y bloques
+  \draw[->] (0,0) -- (13.2,0) node[right] {\small tiempo};
+  \foreach \x/\l in {0/2022,4/2023,8/2024} {
+    \draw (\x,0.1) -- (\x,-0.1) node[below] {\small \l};
+  }
+  \draw[fill=blue!15] (0,0.4) rectangle (8,1.0);
+  \node at (4,0.7) {\small Desarrollo (2022--2023)};
+  \draw[fill=red!20] (8,0.4) rectangle (12,1.0);
+  \node at (10,0.7) {\small Prueba (2024)};
+  % folds
+  
+  % folds
+  % Bloque 1
+  \draw[fill=green!20] (0,2.7) rectangle (4,3.2);        \draw[fill=orange!30] (4,2.7) rectangle (5.33,3.2);
+  % Bloque 2
+  \draw[fill=green!20] (0,2.0) rectangle (5.33,2.5);     \draw[fill=orange!30] (5.33,2.0) rectangle (6.67,2.5);
+  % Bloque 3
+  \draw[fill=green!20] (0,1.3) rectangle (6.67,1.8);     \draw[fill=orange!30] (6.67,1.3) rectangle (8,1.8);
+
+  % Etiquetas de bloques
+  \node[right] at (8.2,2.95) {\scriptsize bloque 1};
+  \node[right] at (8.2,2.25) {\scriptsize bloque 2};
+  \node[right] at (8.2,1.55) {\scriptsize bloque 3};
+  \node[green!50!black] at (2,3.55) {\scriptsize entrenamiento};
+  \node[orange!70!black] at (4.67,3.55) {\scriptsize validaci\'on};
+  
+\end{tikzpicture}
+\caption{Diagrama temporal de la validación: tres bloques de cuatro meses de 2023 con origen creciente, ordenados por fecha de salida programada y comunes a los tres aeropuertos. La reserva de prueba (2024) no interviene.}
+\label{fig:diseno}
+\end{figure}
+ 
+\subsection{Información disponible}
+Se supone disponible la programación utilizada (horarios, ruta, aerolínea) en el momento de emitir la predicción. Las tasas históricas se calculan solo con vuelos de días estrictamente anteriores al de salida (se excluye el día completo, no solo el vuelo que se predice), bajo el supuesto de que el resultado de cada vuelo se conoce al cierre de su día. Para los vuelos de 2024, la historia incluye resultados de días anteriores de 2024; es un supuesto operativo declarado, no un ajuste con la reserva de prueba.
+ 
+\subsection{Métricas y regla de selección}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Principal:} pérdida logarítmica,
+  \[
+    \mathrm{LL} = -\frac{1}{n}\sum_{i=1}^{n}\bigl[y_i\log \hat p_i + (1-y_i)\log(1-\hat p_i)\bigr].
+  \]
+  \item Las probabilidades predichas se acotan al intervalo $[0{,}001;\,0{,}999]$ antes de calcular la pérdida logarítmica (regla fijada a priori e igual para todos los modelos; la referencia no se ve afectada).
+  \item \textbf{Complementarias:} Brier, AUC ROC, calibración gráfica, prevalencia, matriz de confusión con umbral fijado en desarrollo, sensibilidad y valor predictivo positivo (VPP).
+  \item \textbf{Regla de selección:} se elegirá el procedimiento que presente la menor pérdida logarítmica media en los tres bloques de validación. Ante diferencias pequeñas o inciertas, se optará por el modelo más simple. Dado que tres bloques dependientes no permiten estimar intervalos de confianza, las diferencias pareadas por bloque se reportarán únicamente de forma puntual.
+  \item \textbf{Umbral:} se fija en desarrollo, con las predicciones fuera de muestra del modelo elegido en los tres bloques de validación, como el mayor umbral que mantiene una sensibilidad mínima de 0,60. Se prioriza detectar al menos seis de cada diez vuelos con incidencia y, entre los umbrales que lo logran, el más alto, que reduce las falsas alarmas (mayor VPP). Se descartó maximizar $F_1$ porque con una prevalencia cercana al 25\,\% tiende a umbrales bajos que marcan casi todos los vuelos. El umbral y el piso se fijan antes de evaluar en prueba y no se modifican después.
+\end{itemize}
+ 
+\subsection{Referencia}
+Probabilidad constante de incidencia $\hat p = \bar y_{\text{entrenamiento}}$, estimada únicamente con datos de entrenamiento. No se incluye una referencia complementaria: todas las comparaciones se hacen frente a esta probabilidad constante.
+ 
+\subsection{Expectativas previas al ajuste}
+ 
+\paragraph{Modelo 1: regresión logística penalizada.}
+\begin{itemize}
+  \item \textbf{Capacidad de modelado:} captura efectos aditivos en la escala logit de la aerolínea, el mes y el día de la semana, y efectos lineales de la hora de salida, la distancia y las tasas históricas. Estas últimas actúan como variables de resumen de la ruta o la aerolínea, mitigando el problema de alta cardinalidad en los factores de origen (\texttt{Origin}) y destino (\texttt{Dest}).
+  \item \textbf{Limitaciones metodológicas:} no puede capturar interacciones que no se especifiquen explícitamente (p.\,ej., hora $\times$ aeropuerto o aerolínea $\times$ mes) ni relaciones no monótonas de la hora de salida y la distancia, pues entran con una sola pendiente lineal. El agrupamiento de categorías infrecuentes en la clase <<Otra>> elimina información útil de rutas poco comunes. La multicolinealidad entre las tasas históricas genera inestabilidad en los coeficientes individuales, aunque su impacto sobre la capacidad predictiva agregada sea menor. Además, los conteos \texttt{nprev\_*} crecen con el calendario y en 2024 pueden salir del rango de entrenamiento, caso en el cual el modelo los extrapolaría linealmente.
+\end{itemize}
+ 
+\paragraph{Modelo 2: árbol de clasificación podado.}
+\begin{itemize}
+  \item \textbf{Capacidad de modelado:} identifica particiones del espacio de características, detectando umbrales de decisión e interacciones de primer orden (p.\,ej., vuelos nocturnos de una aerolínea específica en una temporada dada).
+  \item \textbf{Limitaciones metodológicas:} es un estimador de alta varianza que asigna probabilidades constantes por hoja (superficie de respuesta escalonada). Esta discontinuidad perjudica la pérdida logarítmica y el AUC frente a modelos con salida probabilística continua. Con señal débil, la poda reduce la estructura a pocas particiones gruesas. Fuera del rango de entrenamiento, los \texttt{nprev\_*} quedan clasificados como el valor más alto observado.
+  \item \textbf{Expectativa de desempeño:} se proyecta como el procedimiento menos competitivo del estudio.
+\end{itemize}
+ 
+\paragraph{Modelo 3: bosque aleatorio de probabilidad.}
+\begin{itemize}
+  \item \textbf{Capacidad de modelado:} captura no linealidades e interacciones complejas, reduciendo la varianza propia de los árboles individuales, e incorpora la estructura de la hora de salida de forma no paramétrica.
+  \item \textbf{Limitaciones metodológicas:} con una relación ruido-señal alta, los nodos pequeños sobreajustan y pueden descalibrar las probabilidades. La dependencia implícita de tasas históricas y conteos ligados al calendario (incluidos los \texttt{nprev\_*}, que en 2024 pueden salir del rango de entrenamiento) puede comprometer la generalización ante periodos con otra prevalencia.
+\end{itemize}
+ 
+ 
+%====================================================================
+\section{Métodos}\label{sec:metodos}
+%====================================================================
+ 
+\subsection{Preprocesamiento}
+Toda transformación, codificación, imputación simple y selección de variables se ajusta \emph{solo} con los datos de entrenamiento de cada partición. Las categorías con menos de 30 vuelos en entrenamiento, y las categorías nuevas, se agrupan en la categoría \emph{Otra}; los valores faltantes de predictores numéricos se imputan con la media de entrenamiento. En la regresión penalizada, \code{glmnet} estandariza internamente los predictores numéricos. Si se usa selección de variables, se evalúa el procedimiento completo.
+ 
+\textbf{Tasas históricas.} Para un vuelo del grupo $g$ con fecha de salida $t$,
+\[
+  \hat\tau_g(t) = \frac{S_g(t) + m\,\bar y(t)}{N_g(t) + m},
+\]
+donde $N_g(t)$ y $S_g(t)$ son el número de vuelos y de incidencias del grupo en días estrictamente anteriores a $t$, $\bar y(t)$ es la tasa global acumulada hasta el día $t-1$ y $m = 20$ es el parámetro de suavizamiento (fijo en esta versión). Los grupos son la ruta (origen--destino), la aerolínea y el par origen$\times$aerolínea; $N_g(t)$ se incorpora como conteo \code{nprev\_*}. En el primer día no hay historia global y la tasa se imputa con la media de entrenamiento.
+ 
+\subsection{Procedimientos comparados}
+\begin{table}[ht]
+\centering
+\caption{Procedimientos, hiperparámetros y presupuesto de búsqueda.}
+\label{tab:metodos}
+\small
+\begin{tabularx}{\textwidth}{@{}L{2.2cm}L{3.4cm}XL{2.2cm}@{}}
+\toprule
+Procedimiento & Modelo & Hiperparámetros a ajustar & Presupuesto \\
+\midrule
+Referencia & Probabilidad constante & -- & -- \\
+\addlinespace
+M1: regresión & Regresión logística penalizada (\code{glmnet}) & $\alpha\in\{0\text{ (ridge)},1\text{ (lasso)}\}$; $\lambda$: 10 valores logarítmicos en $[10^{-5},10^{-2}]$ & 20 config. $\times$ 3 bloques \\
+\addlinespace
+M2: flexibilidad & Árbol de clasificación podado (\code{rpart}) & Parámetro de complejidad $cp$: 20 valores logarítmicos en $[10^{-5},10^{-2{,}5}]$; \code{minbucket}\,$=50$ & 20 config. $\times$ 3 bloques \\
+\addlinespace
+M3: ensamble & Bosque aleatorio de probabilidad (\code{ranger}), 300 árboles & Etapa 1: $m_{\text{try}}\in\{3,5,8,11\}$, tamaño mínimo de nodo $\in\{5,20,50,100,200\}$. Etapa 2 (óptimo en el borde): $m_{\text{try}}\in\{2,3,5\}$, nodo $\in\{200,500,1000,2000\}$. Etapa 3 (última): $m_{\text{try}}\in\{3,5\}$, nodo $\in\{4000,8000\}$ & 20 + 12 + 4 config. $\times$ 3 bloques \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+La configuración de cada familia se elige por la pérdida logarítmica media en los tres bloques de validación.
+ 
+\begin{itemize}
+  \item \textbf{M1: regresión logística penalizada (\texttt{glmnet}).} Funciona como el modelo base natural para respuestas binarias, al estimar probabilidades de forma directa e interpretable. La penalización (ridge, con $\alpha=0$, o lasso, con $\alpha=1$) estabiliza los coeficientes asociados a categorías numerosas y a las tasas históricas, que presentan multicolinealidad. Además, el lasso facilita la selección de variables al descartar categorías sin aporte predictivo.
+  \item \textbf{M2: árbol de clasificación podado (\texttt{rpart}).} Incorpora umbrales e interacciones de primer orden no especificadas de manera explícita (p.\,ej., hora de salida $\times$ aerolínea) y procesa variables categóricas sin necesidad de codificación numérica previa. Se incluye como primer nivel de flexibilidad no aditiva frente a M1; la poda mediante el parámetro de complejidad (\texttt{cp}) previene el sobreajuste, y \texttt{minbucket}$=50$ evita hojas con un número insuficiente de observaciones.
+  \item \textbf{M3: bosque aleatorio de probabilidad (\texttt{ranger}, 300 árboles).} Promedia un ensamble de árboles para reducir la varianza intrínseca del estimador individual, capturando no linealidades e interacciones de orden superior. La salida es una probabilidad estimada mediante la proporción de clases en las hojas. El tamaño mínimo de nodo y el parámetro \texttt{mtry} regulan la flexibilidad, y permiten evaluar si una estructura más compleja que el esquema aditivo aporta capacidad predictiva relevante.
+\end{itemize}
+ 
+\paragraph{Manejo del desbalance de clases.}
+La prevalencia de incidencias oscila entre 21,4\,\% y 27,0\,\% según el año, lo que representa un desbalance moderado. Dado que el objetivo principal es la estimación de probabilidades, evaluadas mediante la pérdida logarítmica, no se aplican técnicas de remuestreo ni ponderación de clases, ya que distorsionarían la calibración de las probabilidades.
+ 
+El desbalance se gestiona en la fase de decisión y no durante el ajuste: el umbral de clasificación se fija en desarrollo para garantizar una sensibilidad mínima (Sección~3.3). Además, la evaluación incorpora sensibilidad, valor predictivo positivo (VPP) y calibración gráfica, junto al área bajo la curva ROC (AUC).
+ 
+ 
+ 
+%====================================================================
+\section{Resultados}
+%====================================================================
+ 
+\subsection{Comparación en desarrollo}
+\begin{table}[ht]
+\centering
+\caption{Desempeño en validación (desarrollo): media de los tres bloques de 2023, con las mismas filas para todos los modelos.}
+\label{tab:dev}
+\begin{tabularx}{\textwidth}{@{}Xrrrr@{}}
+\toprule
+Modelo & Pérd. log. & Brier & AUC & $\Delta$ pérd. log. vs. ref. \\
+\midrule
+Referencia & 0,542 & 0,178 & 0,500 & 0 \\
+M1 & 0,515 & 0,168 & 0,644 & $\approx -0{,}027$ \\
+M2 & 0,525 & 0,172 & 0,613 & $\approx -0{,}017$ \\
+M3 & 0,518 & 0,169 & 0,648 & $\approx -0{,}024$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+\begin{table}[ht]
+\centering
+\caption{Pérdida logarítmica por bloque de validación y diferencias pareadas de M1 (negativo: M1 es mejor).}
+\label{tab:devbloques}
+\small
+\begin{tabularx}{\textwidth}{@{}Xrrrrrrr@{}}
+\toprule
+Bloque & Ref. & M1 & M2 & M3 & M1$-$Ref. & M1$-$M3 & M1$-$M2 \\
+\midrule
+1: ene--abr 2023 & 0,560 & 0,548 & 0,546 & 0,547 & $-0{,}0118$ & $+0{,}0005$ & $+0{,}0020$ \\
+2: may--ago 2023 & 0,568 & 0,533 & 0,547 & 0,540 & $-0{,}0355$ & $-0{,}0069$ & $-0{,}0146$ \\
+3: sep--dic 2023 & 0,497 & 0,463 & 0,481 & 0,467 & $-0{,}0332$ & $-0{,}0034$ & $-0{,}0174$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+En M1, las 20 configuraciones logran prácticamente la misma pérdida logarítmica media (0,515): en este rango la penalización casi no actúa. La configuración elegida es lasso con $\lambda=10^{-4}$. La pérdida de la referencia por bloque es 0,560, 0,568 y 0,497; el tercer bloque tiene menor prevalencia (18,6\,\%), por lo que las comparaciones deben hacerse por diferencias pareadas por bloque y no por la dispersión entre bloques. En M2, el árbol alcanza 0,525 y la pérdida es casi plana para $cp$ entre $9\times10^{-4}$ y $3{,}2\times10^{-3}$; la configuración elegida es $cp=0{,}0023$. En M3, la primera grilla (20 configuraciones) dejó el óptimo en el borde ($m_{\text{try}}=3$, tamaño mínimo de nodo 200) con una pérdida de 0,546, peor que la referencia. Como la pérdida mejoraba al aumentar el tamaño de nodo, se añadió una segunda etapa de 12 configuraciones ($m_{\text{try}}\in\{2,3,5\}$, nodo $\in\{200,500,1000,2000\}$), cuyo mejor resultado es $m_{\text{try}}=5$ y nodo 2000, con 0,521. Con nodos de 2000 vuelos, $m_{\text{try}}$ casi no influye (0,521--0,522), y el óptimo vuelve a quedar en el borde del tamaño de nodo. Una tercera y última etapa ($m_{\text{try}}\in\{3,5\}$, nodo $\in\{4000,8000\}$; 4 configuraciones) estabiliza la pérdida en una meseta de 0,518 a 0,520, con mejor configuración $m_{\text{try}}=5$ y nodo 8000 (0,518). La búsqueda se detiene allí, criterio fijado antes de ejecutar esa etapa. Con la regla de selección definida, el procedimiento elegido es M1: tiene la menor pérdida (0,515) y es el más simple; su ventaja media sobre M3 es de unas 0,003. La comparación pareada por bloque (Tabla~\ref{tab:devbloques}) confirma que M1 supera a la referencia en los tres bloques; frente a M3 es mejor en dos de tres, y en el primero (el de menos datos de entrenamiento) M2 y M3 son marginalmente mejores. Con solo tres bloques dependientes no se asigna un intervalo de confianza a estas diferencias: la elección de M1 se apoya en la regla de selección (menor pérdida media y mayor simplicidad), no en una diferencia estadísticamente establecida.
+ 
+Con el criterio de sensibilidad mínima 0,60, el umbral fijado con las predicciones fuera de muestra de M1 es 0,24. La Tabla~\ref{tab:umbral} muestra su desempeño por bloque. En el conjunto agregado de los tres bloques, el umbral detecta 61\,\% de las incidencias y marca 44\,\% de los vuelos, con un VPP de 0,32 frente a una prevalencia de 23,0\,\% (1,4 veces la prevalencia): sirve para priorizar vuelos, no para decidir por sí solo. En el bloque 3 la sensibilidad (0,49) queda bajo el piso porque la prevalencia de ese bloque es menor (18,6\,\%), lo que es consistente con la deriva descrita en la Sección~2 y anticipa que la sensibilidad en la reserva de 2024 (21,4\,\%) también puede diferir del piso.
+ 
+\begin{table}[ht]
+\centering
+\caption{Matriz de confusión de M1 con el umbral 0,24, por bloque de validación.}
+\label{tab:umbral}
+\small
+\begin{tabularx}{\textwidth}{@{}Xrrrrrrr@{}}
+\toprule
+Bloque & VP & FP & FN & VN & Sensib. & VPP & Marcados \\
+\midrule
+1: ene--abr 2023 & 2\,293 & 5\,238 & 1\,340 & 5\,892 & 0,631 & 0,304 & 51,0\,\% \\
+2: may--ago 2023 & 2\,581 & 4\,644 & 1\,213 & 6\,421 & 0,680 & 0,357 & 48,6\,\% \\
+3: sep--dic 2023 & 1\,272 & 3\,172 & 1\,310 & 8\,120 & 0,493 & 0,286 & 32,0\,\% \\
+\midrule
+Conjunto & 6\,146 & 13\,054 & 3\,863 & 20\,433 & 0,614 & 0,320 & 44,1\,\% \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+\subsection{Evaluación en prueba (2024)}
+Se reajusta el procedimiento seleccionado con todo el desarrollo y se evalúa una sola vez en 2024. Los modelos definidos previamente se informan, pero no se usan para elegir nuevos hiperparámetros, umbrales ni variables.
+ 
+\begin{table}[ht]
+\centering
+\caption{Desempeño en la reserva de prueba (2024): mismas 43\,012 filas para todos los modelos. $\Delta$: diferencia de pérdida logarítmica frente a la referencia (negativo: mejor).}
+\label{tab:test}
+\begin{tabularx}{\textwidth}{@{}Xrrrrrr@{}}
+\toprule
+Modelo & $n$ & Prevalencia & Pérd. log. & $\Delta$ vs. ref. & Brier & AUC \\
+\midrule
+Referencia & 43\,012 & 21,4\,\% & 0,523 & 0 & 0,170 & 0,500 \\
+M1 (elegido) & 43\,012 & 21,4\,\% & 0,496 & $-0{,}027$ & 0,160 & 0,651 \\
+M2 & 43\,012 & 21,4\,\% & 0,509 & $-0{,}014$ & 0,165 & 0,607 \\
+M3 & 43\,012 & 21,4\,\% & 0,497 & $-0{,}026$ & 0,161 & 0,646 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+El orden de los modelos en prueba coincide con el de desarrollo: M1 tiene la menor pérdida (0,496), M3 queda prácticamente empatado (0,497) y M2 es el más débil de los tres; los tres superan a la referencia. La discriminación es moderada (AUC de M1: 0,651). La referencia usa la prevalencia de desarrollo (25,0\,\%); una constante igual a la prevalencia observada en 2024, que no estaba disponible al predecir, alcanzaría 0,519, de modo que, medida contra ese nivel, la ganancia de M1 sería de unas 0,023.
+ 
+Con el umbral 0,24 fijado en desarrollo, M1 marca 31,3\,\% de los vuelos y obtiene una sensibilidad de 0,478 y un VPP de 0,326 (1,5 veces la prevalencia de 21,4\,\%; Tabla~\ref{tab:confusion}). Como se anticipó, la sensibilidad queda bajo el piso de 0,60 fijado en desarrollo. No se debe a una descalibración de nivel (Figura~\ref{fig:diagnostico}): con la menor prevalencia de 2024, menos vuelos superan un umbral de probabilidad fijo (31,3\,\% marcados frente a 44,1\,\% en desarrollo) y la sensibilidad cae. Un umbral de probabilidad fijo no conserva su sensibilidad cuando cambia la prevalencia, por lo que un uso operativo requeriría reajustarlo con datos recientes. El umbral no se modifica tras observar la prueba.
+ 
+\begin{table}[ht]
+\centering
+\caption{Matriz de confusión de M1 en la reserva de prueba con el umbral 0,24 (fijado en desarrollo).}
+\label{tab:confusion}
+\small
+\begin{tabularx}{0.8\textwidth}{@{}Xrr@{}}
+\toprule
+ & Incidencia real ($Y=1$) & Sin incidencia ($Y=0$) \\
+\midrule
+Marcado por el modelo & 4\,398 (VP) & 9\,080 (FP) \\
+No marcado & 4\,808 (FN) & 24\,726 (VN) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+ 
+\paragraph{Complejidad, estabilidad, interpretabilidad y costo.} M1 es el más simple: un modelo aditivo con coeficientes legibles, estable entre bloques (supera a la referencia en los tres) y rápido (unos 36 s de CPU para el ajuste final sobre todo el desarrollo). M2 se puede leer como un conjunto de reglas, pero es el menos preciso, con la menor ganancia, y solo supera a M1 en el primer bloque (unos 13 s de CPU). M3 es una caja negra, con una ganancia equivalente a la de M1 (diferencia $-0{,}0007$ en prueba) y unos 34 s de CPU por ajuste, pero su búsqueda de hiperparámetros fue la más costosa (36 configuraciones en tres etapas, varias horas en un computador personal). Como M3 no mejora a M1, su mayor complejidad no se justifica en este caso.
+ 
+\subsection{Incertidumbre}
+ 
+La diferencia en la pérdida logarítmica entre modelos en la reserva de prueba se evaluó mediante un procedimiento de
+\emph{bootstrap} por bloques temporales, remuestreando con reposición 53 bloques de siete días consecutivos a partir del primer
+día de 2024 (2\,000 réplicas). Cada bloque incluye de forma simultánea los tres aeropuertos, lo que preserva la estructura de
+correlación temporal y las perturbaciones climáticas u operativas compartidas por fecha. Dado que las predicciones permanecen fijas
+y los modelos no se reajustan en cada réplica, el intervalo resultante cuantifica la incertidumbre condicional a las
+estimaciones obtenidas, omitiendo la variabilidad asociada a las fases de entrenamiento y selección.
+ 
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lrrr}
+\toprule
+Comparación (pérdida logarítmica) & Estimación & Percentil 2,5 & Percentil 97,5\\
+\midrule
+M1 $-$ Referencia & $-0{,}0266$ & $-0{,}0340$ & $-0{,}0183$\\
+M1 $-$ M3 & $-0{,}0007$ & $-0{,}0049$ & $+0{,}0035$\\
+\bottomrule
+\end{tabular}
+\caption{Diferencias de pérdida logarítmica en prueba, con intervalo bootstrap al 95\,\%.}
+\label{tab:bootstrap}
+\end{table}
+ 
+El intervalo de M1 frente a la referencia no incluye el cero, lo que indica que la mejora observada es distinguible de la ausencia de
+diferencia. En cambio, el intervalo de M1 frente a M3 sí lo incluye, lo que es coherente con una diferencia muy pequeña
+($-0{,}0007$) entre ambos modelos: en prueba no se puede afirmar que uno sea mejor que el otro. M1 ya había sido elegido en
+desarrollo, con la regla fijada de antemano (ante diferencias pequeñas, el modelo más simple); el resultado en prueba no contradice
+esa elección y no se usó para tomarla.
+ 
+\subsection{Análisis de errores y heterogeneidad}
+ 
+Las Tablas~\ref{tab:aeropuerto}, \ref{tab:temporada} y~\ref{tab:tipo} muestran el desempeño de M1 en prueba, con el umbral de 0,24
+fijado en desarrollo, por aeropuerto, temporada y tipo de incidencia, con el tamaño de cada subgrupo.
+ 
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Aeropuerto & Vuelos & Incidencia (\%) & Pérd. M1 & Pérd. ref. & Diferencia & Sensib. & VPP\\
+\midrule
+BOS & 14\,514 & 21,8 & 0,502 & 0,528 & $-0{,}0259$ & 0,481 & 0,341\\
+JFK & 12\,244 & 22,4 & 0,509 & 0,534 & $-0{,}0250$ & 0,513 & 0,331\\
+LGA & 16\,254 & 20,3 & 0,482 & 0,510 & $-0{,}0284$ & 0,445 & 0,309\\
+\bottomrule
+\end{tabular}
+\caption{Desempeño de M1 en prueba por aeropuerto de origen (umbral 0,24).}
+\label{tab:aeropuerto}
+\end{table}
+ 
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Temporada & Vuelos & Incidencia (\%) & Pérd. M1 & Pérd. ref. & Diferencia & Sensib. & VPP\\
+\midrule
+Invierno (dic.--feb.) & 9\,887 & 21,8 & 0,523 & 0,527 & $-0{,}0046$ & 0,403 & 0,293\\
+Primavera (mar.--may.) & 10\,749 & 20,1 & 0,488 & 0,508 & $-0{,}0205$ & 0,417 & 0,295\\
+Verano (jun.--ago.) & 11\,252 & 30,4 & 0,591 & 0,621 & $-0{,}0301$ & 0,636 & 0,406\\
+Otoño (sep.--nov.) & 11\,124 & 13,3 & 0,385 & 0,434 & $-0{,}0485$ & 0,309 & 0,217\\
+\bottomrule
+\end{tabular}
+\caption{Desempeño de M1 en prueba por temporada (hemisferio norte; umbral 0,24).}
+\label{tab:temporada}
+\end{table}
+ 
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lrr}
+\toprule
+Tipo de incidencia & Vuelos & Fracción marcada\\
+\midrule
+Cancelado & 845 & 0,507\\
+Desviado & 106 & 0,321\\
+Retraso de llegada $\ge 15$ min & 8\,255 & 0,477\\
+Sin incidencia (falsas alarmas) & 33\,806 & 0,269\\
+\bottomrule
+\end{tabular}
+\caption{Detección de M1 por tipo de incidencia en la prueba, con el umbral de 0,24.}
+\label{tab:tipo}
+\end{table}
+ 
+\textbf{Aeropuertos.} La mejora frente a la referencia es parecida en los tres ($-0{,}025$ a $-0{,}028$). La sensibilidad es mayor
+en JFK (0,513) y menor en LGA (0,445), con un VPP entre 0,31 y 0,34.
+ 
+\textbf{Temporadas.} Es la fuente principal de heterogeneidad. En invierno el modelo casi no mejora a la referencia (diferencia de
+$-0{,}0046$) y la sensibilidad es 0,403. En otoño la incidencia de 2024 es solo 13,3\,\%: la diferencia con la referencia es la mayor
+($-0{,}0485$), pero con el umbral fijo la sensibilidad cae a 0,309 y el VPP a 0,217, es decir, hay más falsas alarmas por cada
+incidencia detectada. En verano, con una incidencia de 30,4\,\%, la sensibilidad sube a 0,636 y el VPP a 0,406. Como el umbral es único,
+su utilidad depende de la prevalencia de cada temporada. Estos patrones son descriptivos y no se interpretan como causas.
+ 
+\textbf{Tipos de incidencia y eventos raros.} Se estudia una sola respuesta combinada; esta tabla solo describe a qué tipos alcanza el
+modelo. La fracción de cancelaciones marcadas (0,507) es similar a la de retrasos (0,477). Las cancelaciones (845 vuelos, 2,0\,\%) y
+sobre todo los desvíos (106 vuelos, 0,2\,\%) son eventos raros: el valor de 0,321 para los desvíos corresponde a unos 34 vuelos y su
+error estándar es cercano a 0,045, por lo que se interpreta con cautela. La tasa de falsas alarmas sobre los vuelos sin incidencia es 0,269.
+ 
+\textbf{Calibración.} En la reserva de prueba, la probabilidad media predicha por M1 (0,207) es cercana a la frecuencia observada (0,214). Entre los deciles 4 y 9 las diferencias son menores a 0,015; el decil más bajo está subestimado (0,076 predicho frente a 0,099 observado) y el más alto levemente sobreestimado (0,422 frente a 0,401).
+ 
+\begin{figure}[ht]
+\centering
+\IfFileExists{resultados/calibracion_test.png}{\includegraphics[width=0.7\textwidth]{resultados/calibracion_test.png}}{\fbox{\parbox{0.85\textwidth}{\centering\vspace{2cm}\por{Colocar resultados/calibracion\_test.png junto al .tex}\vspace{2cm}}}}
+\caption{Calibración de M1 en la reserva de prueba (2024): frecuencia observada de incidencia frente a la probabilidad predicha media, por deciles de probabilidad predicha (ambas en escala de probabilidad, 0--1); la línea punteada marca la calibración perfecta. El gráfico muestra que, pese a la discriminación moderada, las probabilidades de M1 son confiables en nivel, lo que respalda el uso de la pérdida logarítmica y de un umbral de probabilidad.}
+\label{fig:diagnostico}
+\end{figure}
+ 
+\subsection{Análisis de sensibilidad}\label{sec:sens}
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Retirar las tasas históricas} (decisión de preparación/representación).
+ 
+\emph{Modificación:} se omiten conjuntamente las tasas históricas y los conteos \texttt{nprev\_*}, y se conservan únicamente los predictores de
+programación (distancia, duración y horarios), de calendario, de aerolínea y de ubicación. M1 se vuelve a sintonizar sobre sus 20 configuraciones,
+mientras que M3 se evalúa con su configuración final.
+ 
+\emph{Impacto en los resultados:} la pérdida logarítmica media en validación aumenta de 0,5147 a 0,5184 en M1 y de 0,5179 a 0,5217 en M3
+(Tabla~\ref{tab:sens1}); el aumento medio es de 0,0037 y 0,0038, respectivamente, y es positivo en los tres bloques. La mejora de M1 frente a la
+referencia disminuye de 0,0268 a 0,0231, de modo que conserva cerca del 86\,\% de su ganancia. Esto indica que el grueso de la señal proviene de las
+variables de programación y calendario, mientras que la información histórica aporta una mejora pequeña pero consistente. La regla de selección no
+cambia: incluso sin información histórica, M1 mantiene la menor pérdida (0,5184 frente a 0,5217 de M3).
+ 
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{rrrrrrr}
+\toprule
+Bloque & M1 & M1 sin historia & Diferencia & M3 & M3 sin historia & Diferencia\\
+\midrule
+1 & 0,548 & 0,552 & $+0{,}0048$ & 0,547 & 0,548 & $+0{,}0004$\\
+2 & 0,533 & 0,535 & $+0{,}0024$ & 0,540 & 0,542 & $+0{,}0024$\\
+3 & 0,463 & 0,468 & $+0{,}0040$ & 0,467 & 0,476 & $+0{,}0086$\\
+Media & 0,5147 & 0,5184 & $+0{,}0037$ & 0,5179 & 0,5217 & $+0{,}0038$\\
+\bottomrule
+\end{tabular}
+\caption{Sensibilidad 1: pérdida logarítmica en validación con y sin tasas históricas ni conteos (positivo: sin historia es peor).}
+\label{tab:sens1}
+\end{table}
+ 
+  \item \textbf{Rutas no vistas} (decisión de validación/población).
+ 
+\emph{Modificación:} se reserva el 20\,\% de las rutas origen--destino del conjunto de desarrollo (49 de 246), lo que representa el
+16,6\,\% de los vuelos. La selección se realiza mediante una regla reproducible que no considera la variable respuesta. Estas rutas se
+excluyen del entrenamiento en cada bloque de validación, lo que permite evaluar el desempeño de M1 tanto en rutas conocidas como en rutas
+no observadas durante el entrenamiento. Para estas últimas, la tasa histórica de la ruta se reemplaza por la media del conjunto de
+entrenamiento y el conteo de vuelos previos se establece en cero, simulando un escenario de inicio en frío (\emph{cold start}).
+ 
+\emph{Impacto en los resultados:} la mejora respecto de la referencia se mantiene incluso en las rutas sin antecedentes propios. La
+diferencia de pérdida logarítmica es de $-0{,}0278$ para los 7\,265 vuelos correspondientes a rutas no vistas y de $-0{,}0252$ para los
+36\,231 vuelos de rutas vistas (Tabla~\ref{tab:sens2}). No obstante, la mejora por bloque presenta una mayor variabilidad en las rutas no
+vistas ($-0{,}0053$, $-0{,}0406$ y $-0{,}0375$).
+ 
+Es importante delimitar el alcance de este resultado: una ruta no vista corresponde a una combinación origen--destino que no estuvo
+presente en el entrenamiento, pero cuyos aeropuertos y aerolínea sí son conocidos por el modelo. Además, las tasas históricas por
+aerolínea y por combinación origen--aerolínea continúan incorporando información de vuelos anteriores asociados a esas rutas. Por lo
+tanto, estos resultados sugieren que el desempeño del modelo no depende exclusivamente de la información histórica específica de cada
+ruta. Sin embargo, no permiten garantizar su capacidad de generalización a aeropuertos o destinos completamente nuevos, los cuales son
+agrupados por el modelo en la categoría \guillemotleft{}Otra\guillemotright{}.
+\end{enumerate}
+ 
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{lrrrr}
+\toprule
+Rutas & Vuelos & Pérd. M1 & Pérd. ref. & Diferencia\\
+\midrule
+Vistas & 36\,231 & 0,516 & 0,541 & $-0{,}0252$\\
+No vistas & 7\,265 & 0,522 & 0,549 & $-0{,}0278$\\
+\bottomrule
+\end{tabular}
+\caption{Sensibilidad 2: desempeño de M1 en validación en rutas vistas y no vistas (tres bloques, ponderado por vuelos).}
+\label{tab:sens2}
+\end{table}
+ 
+ 
+ 
+%====================================================================
+\section{Discusión}
+%====================================================================
+\textbf{Respuesta a la pregunta inicial.} Parcialmente. Con información de programación y calendario, la regresión logística lasso reduce la pérdida logarítmica en 2024 de 0,523 a 0,496 (intervalo percentil de 95\,\%: $-0{,}034$ a $-0{,}018$), con un AUC de 0,65. La mejora es consistente entre bloques de validación y entre aeropuertos, pero modesta y heterogénea por temporada. Los procedimientos flexibles no mejoran a la regresión: el bosque queda empatado y el árbol es peor, lo que indica una señal débil y principalmente aditiva. Al retirar las tasas históricas, M1 conserva cerca del 86\,\% de su ganancia: el grueso de la información está en la programación y el calendario.
+ 
+\textbf{Límites de generalización.} Los resultados corresponden a una muestra de cerca del 10\,\% de los vuelos desde BOS, JFK y LGA entre 2022 y 2024. No se extienden a otros aeropuertos ni a periodos con otro régimen operativo. La evaluación de rutas no vistas usó rutas reservadas al azar dentro de desarrollo, no rutas realmente nuevas ni destinos nuevos.
+ 
+\textbf{Utilidad y condiciones de uso.} El modelo sirve para priorizar, no para decidir: con el umbral 0,24, en 2024 marca 31,3\,\% de los vuelos, detecta 47,8\,\% de las incidencias y 32,6\,\% de los vuelos marcados tiene incidencia (1,5 veces la prevalencia). Para usarlo, el umbral debería reajustarse periódicamente con datos recientes, porque la sensibilidad de un umbral de probabilidad fijo cambia con la prevalencia.
+ 
+\textbf{Deriva de la prevalencia.} La prevalencia de incidencias baja de 27,0\,\% (2022) a 23,0\,\% (2023) y 21,4\,\% (2024), y el último bloque de validación tiene 18,6\,\%. Una probabilidad constante entrenada con 2022--2023 queda sobre la prevalencia de la reserva. La calibración en prueba muestra que M1 no sufre un desajuste de nivel (probabilidad media predicha 0,207 frente a 0,214 observada), de modo que su ganancia no se explica solo por la deriva; sí se explica en parte por la estacionalidad (Tabla~\ref{tab:temporada}): la referencia constante no captura que la incidencia varíe entre 13,3\,\% y 30,4\,\% según la temporada.
+ 
+\textbf{Clasificación retrospectiva frente a herramienta operativa.} Un uso operativo requeriría archivos históricos de programación (la versión del itinerario vigente al emitir la predicción), que el archivo retrospectivo no conserva necesariamente. Además, las tasas históricas suponen conocer el resultado de los vuelos del día anterior al cierre de su día, y el umbral debería reajustarse con datos recientes. Las cifras de este informe no deben leerse como desempeño en tiempo real.
+ 
+\textbf{Situación en que la recomendación no es confiable.} En invierno el modelo casi no mejora a la referencia ($\Delta=-0{,}0046$) y en otoño, con el umbral fijado, detecta solo el 31\,\% de las incidencias; en esas temporadas no debería usarse para priorizar vuelos. Tampoco es confiable para los desvíos (106 casos, sensibilidad de 0,321 imprecisa) ni para aeropuertos o destinos que no aparecen en el entrenamiento.
+ 
+%====================================================================
+\section{Reproducibilidad y contribuciones}
+%====================================================================
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Comando de ejecución:} \code{Rscript --vanilla main.R}.
+  \item \textbf{Versión del repositorio:} \code{a1b2c3d4e5f67890123456789abcdef012345678} \quad \textbf{Entradas:} \code{caso05\_bts\_vuelos.zip} en \code{datos/}.
+  \item \textbf{Entorno:} R 4.6.0 (2026-04-24) en Windows x86\_64; \code{dplyr}, \code{tidyr}, \code{glmnet} 5.0, \code{rpart} y \code{ranger} 0.18.0 (las versiones exactas quedan en \code{resultados/sessionInfo.txt}); Intel Core i7, 16 GB RAM. \textbf{Tiempo aproximado:} 84,2 minutos. \textbf{Semillas:} \code{set.seed(2026)} y \code{seed = 2026} en \code{ranger}.
+  \item \textbf{Prueba desde copia limpia:} 10 de noviembre de 2026, \code{Rscript --vanilla main.R}, ejecución exitosa con resultados idénticos al informe.
+\end{itemize}
+ 
+\subsection*{Contribuciones del equipo}
+\begin{itemize}
+    \item \textbf{Diego Rodríguez:} Diseño general, creación y arquitectura del repositorio de código, definición del esquema de validación temporal y revisión del informe final.
+    \item \textbf{Eilenne Jaque:} Implementación completa del pipeline de procesamiento de datos, codificación de los procedimientos predictivos (\texttt{glmnet}, \texttt{rpart}, \texttt{ranger}), ejecución de los experimentos de validación, prueba y análisis de sensibilidad.
+    \item \textbf{Benjamín Mondaca:} Análisis e interpretación de los resultados en desarrollo y prueba, evaluación de matrices de confusión por umbral, soporte en la construcción conceptual de las tasas históricas y revisión del análisis de incertidumbre via bootstrap.
+    \item \textbf{Matías Gomez:} Auditoría de predictores y variables excluidas, diseño y verificación de las tablas de desempeño del informe, elaboración del análisis de heterogeneidad (por aeropuerto/temporada) y preparación del material para la presentación.
+\end{itemize}
+\subsection*{Declaración de uso de inteligencia artificial}
+ 
+\textbf{Herramienta:} Claude (Anthropic). \textbf{Fechas:4, 9 10 y 11 de Noviembre}. \textbf{Propósito:} depuración y revisión del código R del análisis, apoyo en la redacción y en la estructura de tablas y figuras del informe, y revisión de redacción. \textbf{Partes afectadas:} \code{main.R} (Recibir sugerencias para la optimización y vectorización del código en R (específicamente en el cálculo histórico por grupos temporales), depuración y verificación del código) y las secciones del informe. \textbf{Comprobaciones: El equipo se encargó que lo generado por la IA fuera coherente al caso y acorde a lo visto en el curso, y no tuviera errores o referencias inventadas.} 
+ 
+\begin{thebibliography}{9}
+\bibitem{bts} Bureau of Transportation Statistics. \emph{Reporting Carrier On-Time Performance}. TranStats. \url{https://www.transtats.bts.gov}. 4 de Noviembre de 2026.
+\bibitem{isl} James, G., Witten, D., Hastie, T., Tibshirani, R. (2021). \emph{An Introduction to Statistical Learning with Applications in R}, 2.ª ed. Springer.
+\bibitem{glmnet} Friedman, J., Hastie, T., Tibshirani, R. (2010). Regularization paths for generalized linear models via coordinate descent. \emph{Journal of Statistical Software}, 33(1), 1--22.
+\bibitem{ranger} Wright, M. N., Ziegler, A. (2017). ranger: A fast implementation of random forests for high dimensional data in C++ and R. \emph{Journal of Statistical Software}, 77(1), 1--17.
+\bibitem{breiman} Breiman, L. (2001). Random forests. \emph{Machine Learning}, 45(1), 5--32.
+\end{thebibliography}
+ 
+\appendix
+\section{Anexo técnico}\label{anexo}
+ 
+\subsection{Variables admisibles y excluidas}
+\begin{table}[!htbp]
+\centering
+\caption{Variables admisibles y excluidas.}
+\label{tab:variables}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}L{4.6cm}XL{1.8cm}L{1.9cm}L{2.3cm}@{}}
+\toprule
+Variable & Interpretación & Tipo & Disponibilidad & Decisión \\
+\midrule
+\code{Origin}, \code{Dest}, \code{DestState} & Aeropuertos de origen y destino; estado del destino & Categórica & Programación & Incluida \\
+\code{Reporting\_Airline} & Aerolínea & Categórica & Programación & Incluida \\
+\code{Distance}, \code{CRSElapsedTime} & Distancia y duración programada & Numérica & Programación & Incluida \\
+\code{CRSDepTime}, \code{CRSArrTime} & Horarios programados, convertidos a minutos desde medianoche (más la hora de salida) & Numérica & Programación & Incluida \\
+\code{Month}, \code{DayOfWeek} & Calendario & Categórica & Programación & Incluida \\
+Tasas históricas (ruta, aerolínea, origen$\times$aerolínea) y conteos \code{nprev\_*} & Tasa de incidencia previa suavizada y número de vuelos previos del grupo & Numérica derivada & Solo historia previa & Incluida (ver \S\ref{sec:metodos}) \\
+\midrule
+\code{Year}, \code{FlightDate}, \code{clave} & Fecha y clave del vuelo & -- & Programación & No predictor (particiones y clave) \\
+Códigos DOT/IATA de aerolínea; IDs, ciudad, estado y WAC de origen y destino & Identificadores y agrupaciones equivalentes a \code{Reporting\_Airline}, \code{Origin}, \code{Dest} o \code{DestState} & Categórica & Programación & Excluida (redundante) \\
+\code{Flight\_Number\_\allowbreak Reporting\_Airline} & Número de vuelo (alta cardinalidad) & Identificador & Programación & Excluida (solo en la clave) \\
+\code{Quarter}, \code{Flights}, \code{DistanceGroup}, \code{DepTimeBlk}, \code{ArrTimeBlk} & Derivadas o constantes & -- & Programación & Excluida (redundante) \\
+\code{Tail\_Number} & Matrícula del avión & Categórica & No acreditada & Excluida \\
+\code{DepTime}, \code{WheelsOff}, \code{WheelsOn}, \code{ArrTime}, \code{ActualElapsedTime}, \code{AirTime}, \code{TaxiOut}, \code{TaxiIn} & Horarios y tiempos reales & Numérica & Posterior & Excluida \\
+\addlinespace
+\code{DepDelay}, \code{DepDelayMinutes}, \code{DepDel15}, \code{DepartureDelayGroups} & Retraso de salida & Numérica & Posterior & Excluida \\
+\addlinespace
+\code{CancellationCode}, \code{CarrierDelay}, \code{WeatherDelay}, \code{NASDelay}, \code{SecurityDelay}, \code{LateAircraftDelay}, \code{FirstDepTime}, \code{TotalAddGTime}, \code{LongestAddGTime}, campos \code{Div*} & Códigos, causas de retraso y desvíos & -- & Posterior & Excluida \\
+\addlinespace
+\code{Cancelled}, \code{Diverted}, \code{ArrDel15}, \code{ArrDelay}, \code{ArrDelayMinutes}, \code{ArrivalDelayGroups} & Definen la respuesta o la reflejan & -- & Posterior & Excluida \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+ 
+\subsection{Vuelos por mes}
+\begin{table}[ht]
+\centering
+\caption{Número de vuelos por mes y año.}
+\label{tab:mes}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrrrrr}
+\toprule
+Año & Ene & Feb & Mar & Abr & May & Jun & Jul & Ago & Sep & Oct & Nov & Dic & Total \\
+\midrule
+2022 & 3\,582 & 3\,309 & 3\,756 & 3\,746 & 3\,903 & 3\,655 & 3\,890 & 3\,822 & 3\,817 & 3\,850 & 3\,597 & 3\,505 & 44\,432 \\
+2023 & 3\,578 & 3\,461 & 4\,007 & 3\,717 & 3\,817 & 3\,606 & 3\,741 & 3\,695 & 3\,486 & 3\,637 & 3\,411 & 3\,340 & 43\,496 \\
+2024 & 3\,250 & 3\,183 & 3\,477 & 3\,545 & 3\,727 & 3\,655 & 3\,853 & 3\,744 & 3\,675 & 3\,918 & 3\,531 & 3\,454 & 43\,012 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+ 
+\subsection{Búsqueda de hiperparámetros}
+La Tabla~\ref{tab:busqueda} resume la mejor configuración de cada familia y etapa según la pérdida logarítmica media en los tres bloques de validación. La búsqueda completa (todas las configuraciones) queda en \code{resultados/busqueda\_hiperparametros.csv}.
+ 
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{llrl}
+\toprule
+Familia (etapa) & Mejor configuración & Pérd. log. media & Comentario\\
+\midrule
+M1 & $\alpha=1$ (lasso), $\lambda=10^{-4}$ & 0,515 & 20 configuraciones equivalentes\\
+M2 & $cp=0{,}0023$ & 0,525 & meseta para $cp$ de $9\times10^{-4}$ a $3{,}2\times10^{-3}$\\
+M3 (etapa 1) & $m_{\text{try}}=3$, nodo 200 & 0,546 & óptimo en el borde de la grilla\\
+M3 (etapa 2) & $m_{\text{try}}=5$, nodo 2000 & 0,521 & óptimo en el borde del tamaño de nodo\\
+M3 (etapa 3) & $m_{\text{try}}=5$, nodo 8000 & 0,518 & meseta (0,518--0,520); última etapa\\
+\bottomrule
+\end{tabular}
+\caption{Mejor configuración por familia y etapa de búsqueda.}
+\label{tab:busqueda}
+\end{table}
+ 
+\subsection{Reglas de codificación de categorías}
+En cada partición, las categorías de los predictores categóricos con menos de 30 vuelos en el entrenamiento, y las categorías que no aparecen en él, se agrupan en la categoría \emph{Otra}. Los valores faltantes de los predictores numéricos se imputan con la media del entrenamiento. Ambas reglas se aprenden solo con los datos de entrenamiento de la partición correspondiente.
+ 
+\subsection{Comprobaciones de fuga de información}
+\begin{itemize}[leftmargin=*]
+  \item Ningún predictor es una columna excluida o auxiliar (verificación en el código antes de ajustar).
+  \item Se excluyen horarios y tiempos reales, retrasos, causas, códigos de cancelación, campos de desvío y cualquier variable que defina la respuesta (Tabla~\ref{tab:variables}).
+  \item Las tasas históricas y los conteos usan solo vuelos de días estrictamente anteriores al de salida.
+  \item Los bloques de validación usan solo meses anteriores para entrenar; la reserva de 2024 no interviene en la selección de modelos, hiperparámetros ni umbral.
+  \item La clave del vuelo no tiene duplicados, por lo que ningún vuelo aparece a la vez en entrenamiento y validación.
+\end{itemize}
+ 
+\end{document}
