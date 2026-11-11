@@ -18,7 +18,7 @@ El repositorio debe contar con la siguiente estructura mínima para ejecutarse c
 ├── datos/                  # Directorio para los archivos de entrada (vuelos.csv, diccionario.csv)
 ├── main.R                  # Script principal y punto de entrada único
 ├── id_predictores.R        # Script auxiliar para auditoría y exclusión de variables (cargado por main.R)
-├── informe_final.tex       # Código fuente del informe en LaTeX
+├── Informe.tex       # Código fuente del informe en LaTeX
 ├── presentacion.pdf        # Diapositivas de la presentación final
 └── README.md               # Este archivo
 ```
