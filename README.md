@@ -16,7 +16,6 @@ Este repositorio contiene el código y los resultados del trabajo final del curs
 El repositorio debe contar con la siguiente estructura mínima para ejecutarse correctamente:
 ```text
 ├── datos/                  # Directorio para los archivos de entrada (vuelos.csv, diccionario.csv)
-├── resultados/             # Directorio generado automáticamente con salidas (.csv, .png, sessionInfo.txt)
 ├── main.R                  # Script principal y punto de entrada único
 ├── id_predictores.R        # Script auxiliar para auditoría y exclusión de variables (cargado por main.R)
 ├── informe_final.tex       # (Opcional) Código fuente del informe en LaTeX
